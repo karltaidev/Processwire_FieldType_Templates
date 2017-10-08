@@ -15,15 +15,19 @@
  * http://www.processwire.com
  * http://www.ryancramer.com
  *
+ * @version 1.0.1 forked version extended inputfield options
+ * @author Hani, kixe
+ *
  */
 class FieldtypeTemplates extends FieldtypeMulti {
 
     public static function getModuleInfo() {
         return array(
             'title' => 'Templates Reference (multiple)',
-            'version' => 100,
+            'version' => 101,
             'summary' => 'Field that stores a reference to one or more templates and makes them sortable.',
-            'permanent' => false,
+            'author' => 'Hani, kixe',
+            'href' => 'https://processwire.com/talk/topic/1666-templates-select-fieldtypetemplates/',
         );
     }
 
@@ -40,12 +44,10 @@ class FieldtypeTemplates extends FieldtypeMulti {
 
         foreach ($value as $k => $v) {
             // we allow integers
-            if (is_int($v) && $this->templates->get($v))
-                continue;
+            if (is_int($v) && $this->templates->get($v)) continue;
 
             // we allow templates
-            if ($v instanceof Template)
-                continue;
+            if ($this->templates->get($v) instanceof Template) continue;
 
             // but we don't allow anything else
             unset($value[$k]);
@@ -60,27 +62,39 @@ class FieldtypeTemplates extends FieldtypeMulti {
 
         if (empty($value))
             return $v;
-
-        foreach ($value as $templateID) {
-            $v[] = (int) $templateID;
+        if(is_array($value)){
+            foreach ($value as $templateID) {
+                $v[] = (int) $templateID;
+            }
+        }else{
+            $v = (int) $value;
         }
+            
 
         return $v;
     }
 
     public function ___sleepValue(Page $page, Field $field, $value) {
-
-        $a = array();
-
-        foreach ($value as $template) {
-            if (is_int($template))
-                $templateID = $template;
+        
+        if(is_array($value)){
+            $a = array();
+            foreach ($value as $template) {
+                if (is_int($template))
+                    $templateID = $template;
+                else
+                    $templateID = $this->fuel('templates')->get($template)->id;
+                $a[] = $templateID;
+            }
+            return $a;
+        }else{
+            if (is_int($value))
+                $templateID = $value;
             else
-                $templateID = $this->fuel('templates')->get($template)->id;
-            $a[] = $templateID;
+                $templateID = $this->fuel('templates')->get($value)->id;
+            return $templateID;
         }
 
-        return $a;
+        
     }
 
     /**
@@ -107,7 +121,10 @@ class FieldtypeTemplates extends FieldtypeMulti {
 
     public function getInputfield(Page $page, Field $field) {
 
-        $inputfield = $this->modules->get('InputfieldAsmSelect');
+        // get (set default) Inputfieldtype
+        $class = ($field->input_type)?$field->input_type:'InputfieldSelect';
+        // set Inputfield
+        $inputfield = $this->modules->get($class);
         $inputfield->attr('name', $field->name);
 
         if (!empty($field->templateTypes)) {
@@ -147,16 +164,37 @@ class FieldtypeTemplates extends FieldtypeMulti {
     public function ___getConfigInputfields(Field $field) {
 
         $inputfields = parent::___getConfigInputfields($field);
+
+        // choose inputfieldtype
+        $f = $this->modules->get('InputfieldSelect');
+        $f->label = $this->_('Inputfieldtype');
+        $f->attr('name', 'input_type');
+        $f->attr('value', $field->input_type);
+        $f->required = true;
+        $f->description = $this->_('Select the type of Inputfield.');
+        $f->notes = '* ' . $this->_('Types indicated with an asterisk are for multiple selection. Maybe 3rd party Inputfields will not work as expected. Please test carefully.');
+        $f->addOption('InputfieldSelect', 'Select');
+        foreach($this->modules->get("InputfieldPage")->data['inputfieldClasses'] as $class) {
+            $module = $this->modules->get($class);
+            if($module instanceof  InputfieldSelect) {
+                $label = str_replace("Inputfield", '', $class);
+                if($module instanceof InputfieldHasArrayValue) $label .= "*";
+                $f->addOption($class, $label);
+            }
+        }
+        $inputfields->append($f);
+
         $templateTypes = array();
         $lastType = '';
 
         $f = $this->modules->get("InputfieldCheckboxes");
+        $f->optionColumns = 4;
         $f->attr('name', 'templateTypes');
 
         foreach ($this->templates as $template) {
             if ($template->id == $lastType)
                 continue;
-            $f->addOption($template->id, $template->name . ($template->label ? ' (' . $template->label . ')' : ''));
+            $f->addOption($template->id, $template->name);
             $lastType = $template->id;
         }
 
